@@ -1,0 +1,96 @@
+import scipy
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import datetime as dt
+from scipy.stats import norm
+
+def datafetch (start,end,stocks):
+    data=yf.download(stocks,start,end)
+    returns=data["Close"].pct_change().dropna()
+    return returns
+def histmethod (x,nassets,days):
+    if isinstance(x,pd.DataFrame):
+        weight=np.ones(nassets)/nassets
+        preturns=(x*weight).sum(axis=1)
+        x=preturns
+    x = (1 + x).rolling(days).apply(np.prod) - 1
+    x=x.dropna()
+    VaR = np.percentile(x, 5)
+    CVaR = x[x < VaR].mean()
+    plt.axvline(VaR, color='r', linestyle='dashed')
+    plt.axvline(CVaR, color='g', linestyle='dashed')
+    plt.hist(x, bins=30, edgecolor='black')
+    plt.title('Historical Method')
+    plt.show()
+    print(VaR)
+def parametricmethod(x,nassets,days):
+    x = x.squeeze()
+    if isinstance(x,pd.DataFrame):
+        weight = np.ones(nassets) / nassets
+        preturns = (x * weight).sum(axis=1)
+        x=preturns
+    x = (1 + x).rolling(days).apply(np.prod, raw=True) - 1
+    x = x.dropna()
+    mean = x.mean()
+    std = x.std()
+    ret = np.linspace(mean - 3*std, mean + 3*std, 1000)
+    confidence_level = 0.95
+    z_score = norm.ppf(1 - confidence_level)
+    VaR = mean + z_score * std
+    CVaR = ret[ret < VaR].mean()
+
+    dist = norm.pdf(ret, mean, std)
+    plt.fill_between(ret, dist,where=(ret <= VaR), color='r', alpha=0.3)
+    plt.axvline(CVaR, color='g', linestyle='dashed')
+    plt.plot(ret,dist)
+    plt.title('Parametric Method')
+    plt.show()
+    print(VaR)
+def montecarlomethod(x,nassets,days):
+    x = x.squeeze()
+    if isinstance(x,pd.DataFrame):
+        weight = np.ones(nassets)/ nassets
+        preturns = (x * weight).sum(axis=1)
+        x=preturns
+
+    mean = x.mean()
+    std = x.std()
+    genreturns=(1+np.random.normal(mean,std,[days,1000])).cumprod(axis=0)
+    ret=genreturns[days-1,:]/genreturns[0,:]-1
+    rmean=ret.mean()
+    rstd=ret.std()
+    xdist=np.linspace(ret.min(),ret.max(),1000)
+    dist = norm.pdf(xdist, rmean, rstd)
+    VaR =np.percentile(ret, 5)
+    CVaR = ret[ret <VaR].mean()
+    plt.axvline(VaR, color='r', linestyle='dashed')
+    plt.hist(ret, bins=30, edgecolor='black',density=True)
+    plt.plot(xdist,dist)
+    plt.axvline(CVaR, color='g', linestyle='dashed')
+    plt.title('Monte Carlo Method')
+    plt.show()
+    print(VaR)
+
+
+def visual_backtest(x, days):
+    rolling_var = x.rolling(window=days).apply(lambda x: np.percentile(x, 5), raw=True)
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(x.index, x, color='blue',alpha=0.5)
+    plt.plot(rolling_var.index, rolling_var, color='red', linewidth=1.5)
+    plt.title('Rolling VaR')
+    plt.show()
+
+
+stocks=["GOOG"]
+nassets=len(stocks)
+start=dt.datetime.today()-dt.timedelta(days=360*4)
+end=dt.datetime.today()
+x=datafetch(start,end,stocks)
+days=30
+histmethod(x,nassets,days)
+parametricmethod(x,nassets,days)
+montecarlomethod(x,nassets,days)
+visual_backtest(x,days)
